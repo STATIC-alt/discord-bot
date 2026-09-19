@@ -151,4 +151,7 @@ async def show_leaderboard(ctx):
 
     await ctx.send(embed=embed)
 
-bot.run("MTU0NTc1NjcxMTY0OTAyNjE2OA.Gv9GNp.ZvYfOgOM1T7GQH_xAOsSOb0eLqq7qcN_I_1WOQ")
+import os
+# Бот будет брать токен из скрытых настроек сервера Render
+bot.run(os.getenv("BOT_TOKEN"))
+
