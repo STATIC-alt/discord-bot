@@ -6,7 +6,7 @@ import os
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# --- МИКРО-ВЕБ-СЕРВЕР ДЛЯ ОБХОДА БЛОКИРОВКИ RENDER ---
+# --- ВЕБ-СЕРВЕР ДЛЯ ОБХОДА БЛОКИРОВКИ НА БЕСПЛАТНОМ ТАРИФЕ RENDER ---
 class SimpleWebServer(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -15,15 +15,13 @@ class SimpleWebServer(BaseHTTPRequestHandler):
         self.wfile.write(b"Bot is alive!")
 
 def run_web_server():
-    # Render автоматически передает нужный порт в переменную PORT
     port = int(os.getenv("PORT", 8080))
     server = HTTPServer(("0.0.0.0", port), SimpleWebServer)
     server.serve_forever()
 
-# Запускаем сайт в отдельном потоке, чтобы он не мешал боту
 Thread(target=run_web_server, daemon=True).start()
 
-# --- КОД БОТА ---
+# --- НАСТРОЙКА БОТА ДИСКОРД ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -32,6 +30,7 @@ intents.voice_states = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 voice_start_times = {}
 
+# --- ИСПРАВЛЕННАЯ РАБОТА С БАЗОЙ ДАННЫХ ---
 def init_db():
     conn = sqlite3.connect("activity_weekly.db")
     cursor = conn.cursor()
@@ -44,10 +43,11 @@ def add_message(user_id):
     today = datetime.now().strftime("%Y-%m-%d")
     conn = sqlite3.connect("activity_weekly.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT rowid FROM messages WHERE user_id = ? AND date = ?", (user_id, today))
+    cursor.execute("SELECT rowid, count FROM messages WHERE user_id = ? AND date = ?", (user_id, today))
     row = cursor.fetchone()
     if row:
-        cursor.execute("UPDATE messages SET count = count + 1 WHERE rowid = ?", (row,))
+        # Исправлено: передаем точный rowid (первый элемент кортежа row[0])
+        cursor.execute("UPDATE messages SET count = count + 1 WHERE rowid = ?", (row[0],))
     else:
         cursor.execute("INSERT INTO messages (user_id, date, count) VALUES (?, ?, 1)", (user_id, today))
     conn.commit()
@@ -57,10 +57,11 @@ def add_voice_time(user_id, seconds):
     today = datetime.now().strftime("%Y-%m-%d")
     conn = sqlite3.connect("activity_weekly.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT rowid FROM voice WHERE user_id = ? AND date = ?", (user_id, today))
+    cursor.execute("SELECT rowid, seconds FROM voice WHERE user_id = ? AND date = ?", (user_id, today))
     row = cursor.fetchone()
     if row:
-        cursor.execute("UPDATE voice SET seconds = seconds + ? WHERE rowid = ?", (seconds, row))
+        # Исправлено: передаем точный rowid (первый элемент кортежа row[0])
+        cursor.execute("UPDATE voice SET seconds = seconds + ? WHERE rowid = ?", (seconds, row[0]))
     else:
         cursor.execute("INSERT INTO voice (user_id, date, seconds) VALUES (?, ?, ?)", (user_id, today, seconds))
     conn.commit()
@@ -70,15 +71,19 @@ def get_weekly_stats(user_id):
     seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     conn = sqlite3.connect("activity_weekly.db")
     cursor = conn.cursor()
+    
     cursor.execute("SELECT SUM(count) FROM messages WHERE user_id = ? AND date >= ?", (user_id, seven_days_ago))
     msg_row = cursor.fetchone()
     messages = msg_row[0] if msg_row and msg_row[0] is not None else 0
+
     cursor.execute("SELECT SUM(seconds) FROM voice WHERE user_id = ? AND date >= ?", (user_id, seven_days_ago))
     voice_row = cursor.fetchone()
     seconds = voice_row[0] if voice_row and voice_row[0] is not None else 0
+
     conn.close()
     return messages, seconds
 
+# --- СОБЫТИЯ ---
 @bot.event
 async def on_ready():
     init_db()
@@ -89,6 +94,7 @@ async def on_message(message):
     if message.author.bot:
         return
     add_message(message.author.id)
+    # Исправлено: строка обязательна, чтобы бот реагировал на команды !стата и !неделя
     await bot.process_commands(message)
 
 @bot.event
@@ -115,6 +121,7 @@ def get_medal(index):
     if index == 3: return "🥉"
     return "#" + str(index)
 
+# --- ИСПРАВЛЕННЫЕ КОМАНДЫ ---
 @bot.command(name="стата")
 async def show_stats(ctx):
     user_id = ctx.author.id
@@ -169,5 +176,5 @@ async def show_leaderboard(ctx):
 
     await ctx.send(embed=embed)
 
-# Запуск
+# Безопасный запуск через переменную на Render
 bot.run(os.getenv("BOT_TOKEN"))
