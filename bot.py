@@ -2,7 +2,28 @@ import discord
 from discord.ext import commands
 from datetime import datetime, timedelta
 import sqlite3
+import os
+from threading import Thread
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
+# --- МИКРО-ВЕБ-СЕРВЕР ДЛЯ ОБХОДА БЛОКИРОВКИ RENDER ---
+class SimpleWebServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        self.wfile.write(b"Bot is alive!")
+
+def run_web_server():
+    # Render автоматически передает нужный порт в переменную PORT
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), SimpleWebServer)
+    server.serve_forever()
+
+# Запускаем сайт в отдельном потоке, чтобы он не мешал боту
+Thread(target=run_web_server, daemon=True).start()
+
+# --- КОД БОТА ---
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -26,7 +47,7 @@ def add_message(user_id):
     cursor.execute("SELECT rowid FROM messages WHERE user_id = ? AND date = ?", (user_id, today))
     row = cursor.fetchone()
     if row:
-        cursor.execute("UPDATE messages SET count = count + 1 WHERE rowid = ?", (row[0],))
+        cursor.execute("UPDATE messages SET count = count + 1 WHERE rowid = ?", (row,))
     else:
         cursor.execute("INSERT INTO messages (user_id, date, count) VALUES (?, ?, 1)", (user_id, today))
     conn.commit()
@@ -39,7 +60,7 @@ def add_voice_time(user_id, seconds):
     cursor.execute("SELECT rowid FROM voice WHERE user_id = ? AND date = ?", (user_id, today))
     row = cursor.fetchone()
     if row:
-        cursor.execute("UPDATE voice SET seconds = seconds + ? WHERE rowid = ?", (seconds, row[0]))
+        cursor.execute("UPDATE voice SET seconds = seconds + ? WHERE rowid = ?", (seconds, row))
     else:
         cursor.execute("INSERT INTO voice (user_id, date, seconds) VALUES (?, ?, ?)", (user_id, today, seconds))
     conn.commit()
@@ -49,15 +70,12 @@ def get_weekly_stats(user_id):
     seven_days_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
     conn = sqlite3.connect("activity_weekly.db")
     cursor = conn.cursor()
-    
     cursor.execute("SELECT SUM(count) FROM messages WHERE user_id = ? AND date >= ?", (user_id, seven_days_ago))
     msg_row = cursor.fetchone()
     messages = msg_row[0] if msg_row and msg_row[0] is not None else 0
-
     cursor.execute("SELECT SUM(seconds) FROM voice WHERE user_id = ? AND date >= ?", (user_id, seven_days_ago))
     voice_row = cursor.fetchone()
     seconds = voice_row[0] if voice_row and voice_row[0] is not None else 0
-
     conn.close()
     return messages, seconds
 
@@ -151,7 +169,5 @@ async def show_leaderboard(ctx):
 
     await ctx.send(embed=embed)
 
-import os
-# Бот будет брать токен из скрытых настроек сервера Render
+# Запуск
 bot.run(os.getenv("BOT_TOKEN"))
-
