@@ -151,4 +151,4 @@ async def show_leaderboard(ctx):
 
     await ctx.send(embed=embed)
 
-bot.run("MTU0NTc1NjcxMTY0OTAyNjE2OA.GAfVJJ._KMYDT8X_Dq99RDNpyNwv59VsbYFiGSg4SfFCY")
+bot.run("MTU0NTc1NjcxMTY0OTAyNjE2OA.Gv9GNp.ZvYfOgOM1T7GQH_xAOsSOb0eLqq7qcN_I_1WOQ")
