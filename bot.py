@@ -6,21 +6,27 @@ import os
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# --- ВЕБ-СЕРВЕР ДЛЯ ОБХОДА ТАЙМАУТА RENDER (БЕСПЛАТНЫЙ ТАРИФ) ---
+# --- ИСПРАВЛЕННЫЙ ВЕБ-СЕРВЕР ДЛЯ ОБХОДА ТАЙМАУТА RENDER (УБИРАЕТ ОШИБКУ 404) ---
 class SimpleWebServer(BaseHTTPRequestHandler):
     def do_GET(self):
+        # Отправляем успешный статус 200 OK на любые запросы от Render и UptimeRobot
         self.send_response(200)
-        self.send_header("Content-type", "text/html")
+        self.send_header("Content-type", "text/html; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"Bot is online and working!")
+        self.wfile.write(b"Bot is online and working 24/7!")
+
+    def log_message(self, format, *args):
+        # Отключаем лишний спам в логи хостинга
+        return
 
 def run_web_server():
     port = int(os.getenv("PORT", 8080))
     server = HTTPServer(("0.0.0.0", port), SimpleWebServer)
     server.serve_forever()
 
-# Запуск веб-сервера в фоновом потоке
+# Запускаем веб-сервер в фоновом потоке
 Thread(target=run_web_server, daemon=True).start()
+
 
 # --- НАСТРОЙКА БОТА ДИСКОРД ---
 intents = discord.Intents.default()
@@ -31,7 +37,8 @@ intents.voice_states = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 voice_start_times = {}
 
-# --- ПОЛНОСТЬЮ ИСПРАВЛЕННАЯ РАБОТА С БАЗОЙ ДАННЫХ ---
+
+# --- ЧИСТАЯ ИБЕЗОПАСНАЯ РАБОТА С БАЗОЙ ДАННЫХ ---
 def init_db():
     conn = sqlite3.connect("activity_weekly.db")
     cursor = conn.cursor()
@@ -57,13 +64,11 @@ def add_message(user_id):
     conn = sqlite3.connect("activity_weekly.db")
     cursor = conn.cursor()
     
-    # Проверяем, писал ли пользователь уже сегодня
     cursor.execute("SELECT count FROM messages WHERE user_id = ? AND date = ?", (user_id, today))
     row = cursor.fetchone()
     
     if row:
-        # row[0] достает точное число из базы данных (без кортежей!)
-        current_count = row[0]
+        current_count = int(row[0])
         cursor.execute("UPDATE messages SET count = ? WHERE user_id = ? AND date = ?", (current_count + 1, user_id, today))
     else:
         cursor.execute("INSERT INTO messages (user_id, date, count) VALUES (?, ?, 1)", (user_id, today))
@@ -76,12 +81,11 @@ def add_voice_time(user_id, seconds):
     conn = sqlite3.connect("activity_weekly.db")
     cursor = conn.cursor()
     
-    # Проверяем, сидел ли пользователь уже сегодня в войсе
     cursor.execute("SELECT seconds FROM voice WHERE user_id = ? AND date = ?", (user_id, today))
     row = cursor.fetchone()
     
     if row:
-        current_seconds = row[0]
+        current_seconds = int(row[0])
         cursor.execute("UPDATE voice SET seconds = ? WHERE user_id = ? AND date = ?", (current_seconds + seconds, user_id, today))
     else:
         cursor.execute("INSERT INTO voice (user_id, date, seconds) VALUES (?, ?, ?)", (user_id, today, seconds))
@@ -96,14 +100,15 @@ def get_weekly_stats(user_id):
     
     cursor.execute("SELECT SUM(count) FROM messages WHERE user_id = ? AND date >= ?", (user_id, seven_days_ago))
     msg_row = cursor.fetchone()
-    messages = msg_row[0] if msg_row and msg_row[0] is not None else 0
+    messages = int(msg_row[0]) if msg_row and msg_row[0] is not None else 0
 
     cursor.execute("SELECT SUM(seconds) FROM voice WHERE user_id = ? AND date >= ?", (user_id, seven_days_ago))
     voice_row = cursor.fetchone()
-    seconds = voice_row[0] if voice_row and voice_row[0] is not None else 0
+    seconds = int(voice_row[0]) if voice_row and voice_row[0] is not None else 0
 
     conn.close()
     return messages, seconds
+
 
 # --- СОБЫТИЯ ---
 @bot.event
@@ -118,7 +123,7 @@ async def on_message(message):
         
     add_message(message.author.id)
     
-    # ЖЕСТКАЯ ОБРАБОТКА КОМАНД: теперь бот ВСЕГДА будет видеть !стата и !неделя
+    # Чтобы бот реагировал на текстовые команды
     await bot.process_commands(message)
 
 @bot.event
@@ -145,6 +150,7 @@ def get_medal(index):
     if index == 2: return "🥈"
     if index == 3: return "🥉"
     return "#" + str(index)
+
 
 # --- КОМАНДЫ ---
 @bot.command(name="стата")
@@ -198,12 +204,13 @@ async def show_leaderboard(ctx):
         member = ctx.guild.get_member(row[0])
         name = member.display_name if member else f"ID: {row[0]}"
         medal = get_medal(i)
-        h = row[1] // 3600
-        m = (row[1] % 3600) // 60
+        h = int(row[1]) // 3600
+        m = (int(row[1]) % 3600) // 60
         voice_text += f"{medal} **{name}**\n┗━━ ` {h} ч. {m} мин. `\n"
     embed.add_field(name="🔊 ТОП ПО ГОЛОСУ (ВОЙС)", value=voice_text if voice_text else "*Пока никто не сидел*", inline=False)
 
     await ctx.send(embed=embed)
 
+# Запуск бота через переменную окружения BOT_TOKEN на Render
 bot.run(os.getenv("BOT_TOKEN"))
 
